@@ -1,3 +1,6 @@
+Here's the complete modified `tg-upload.py` file with forwarding functionality added:
+
+```python
 from pathlib import Path, PurePath
 from sys import version_info as py_ver
 from pkg_resources import get_distribution as get_dist
@@ -29,7 +32,7 @@ json_endpoint = "https://cdn.thecaduceus.eu.org/tg-upload/release.json"
 parser = argparse.ArgumentParser(
   prog="tg-upload",
   usage="https://thecaduceus.eu.org/tg-upload",
-  description="An open-source Python program or a CLI Tool to upload/download files/folder to/from Telegram effortlessly.",
+  description="An open-source Python program or a CLI Tool to upload/download files/folder to/from Telegram effortlessly with message forwarding capabilities.",
   epilog="An open-source program developed by Dr.Caduceus (GitHub.com/TheCaduceus)"
   )
 
@@ -305,8 +308,10 @@ def get_chatid(raw_id):
     return int(raw_id)
   else:
     return raw_id
+
 def forward_messages_func(app, from_chat, to_chat, message_ids, copy_mode=False):
     """Forward or copy specific messages from one chat to another"""
+    action = "forwarded" if not copy_mode else "copied"
     try:
         if copy_mode:
             result = app.copy_messages(
@@ -314,14 +319,12 @@ def forward_messages_func(app, from_chat, to_chat, message_ids, copy_mode=False)
                 from_chat_id=from_chat,
                 message_ids=message_ids
             )
-            action = "copied"
         else:
             result = app.forward_messages(
                 chat_id=to_chat,
                 from_chat_id=from_chat,
                 message_ids=message_ids
             )
-            action = "forwarded"
         
         print(f"✅ Successfully {action} {len(message_ids)} message(s)")
         return result
@@ -493,6 +496,14 @@ elif args.env:
   table.add_row(["TG_UPLOAD_DL_DIR", "--dl_dir", env.get("TG_UPLOAD_DL_DIR"), None])
   table.add_row(["TG_UPLOAD_DEVICE_MODEL", "--device_model", env.get("TG_UPLOAD_DEVICE_MODEL"), "tg-upload"])
   table.add_row(["TG_UPLOAD_SYSTEM_VERSION", "--system_version", env.get("TG_UPLOAD_SYSTEM_VERSION"), f"{py_ver[0]}.{py_ver[1]}.{py_ver[2]}"])
+  # Add forwarding environment variables to the table
+  table.add_row(["TG_UPLOAD_FORWARD", "--forward", env.get("TG_UPLOAD_FORWARD"), False])
+  table.add_row(["TG_UPLOAD_FROM_CHAT", "--from_chat", env.get("TG_UPLOAD_FROM_CHAT"), None])
+  table.add_row(["TG_UPLOAD_TO_CHAT", "--to_chat", env.get("TG_UPLOAD_TO_CHAT"), None])
+  table.add_row(["TG_UPLOAD_FORWARD_MSG_IDS", "--forward_msg_ids", env.get("TG_UPLOAD_FORWARD_MSG_IDS"), None])
+  table.add_row(["TG_UPLOAD_FORWARD_RANGE", "--forward_range", env.get("TG_UPLOAD_FORWARD_RANGE"), False])
+  table.add_row(["TG_UPLOAD_COPY_MODE", "--copy_mode", env.get("TG_UPLOAD_COPY_MODE"), False])
+  table.add_row(["TG_UPLOAD_FORWARD_LIMIT", "--forward_limit", env.get("TG_UPLOAD_FORWARD_LIMIT"), 100])
   exit(table)
 elif args.frame:
   if not args.path:
@@ -567,7 +578,7 @@ else:
   )
 
 with client:
-  # FORWARDING MODE (Add after line 230, before "if args.login_only:")
+  # FORWARDING MODE
   if args.forward:
     print("🔄 Forwarding mode enabled")
     
@@ -718,7 +729,7 @@ with client:
         elif args.msg_id[0] == args.msg_id[1]:
           exit("Error: MSG_IDs should be different.")
 
-        message_ids = range(args.msg_id[0], args.msg_id[1]+1) if args.msg_id[0] < args.msg_id[1] else range(args.msg__id[1], args.msg_id[0]+1)
+        message_ids = range(args.msg_id[0], args.msg_id[1]+1) if args.msg_id[0] < args.msg_id[1] else range(args.msg_id[1], args.msg_id[0]+1)
 
         for message_id in message_ids:
           try:
@@ -869,7 +880,8 @@ with client:
             filename = args.prefix + filename
           if args.replace:
             filename = filename.replace(args.replace[0], args.replace[1])
-          file_size, file_sha256, file_md5, creation_time, modification_time = file_info(args.path, caption)
+          file_size, file_sha256, file_md5, creation_time, modification_time = file
+	  _info(args.path, caption)
           with VideoFileClip(args.path) as video:
             Path(args.thumb_dir).mkdir(exist_ok=True)
             if args.thumb == 'auto':
@@ -978,7 +990,7 @@ with client:
               args.duration = floor(audio.duration)
           file_size, file_sha256, file_md5, creation_time, modification_time = file_info(args.path, caption)
           start_time = time()
-          client.send_voice(chat_id. args.path, progress=upload_progress, duration=args.duration, parse_mode=parse_mode, caption=caption.format(file_name = PurePath(filename).stem, file_format = PurePath(filename).suffix, file_size_b = file_size, file_size_kb = file_size / 1024, file_size_mb = file_size / (1024 * 1024), file_size_gb = file_size / (1024 * 1024 * 1024), file_sha256 = file_sha256, file_md5 = file_md5, creation_time = creation_time, modification_time = modification_time, duration=args.duration, path = PurePath(args.path)), disable_notification=args.silent, reply_to_message_id=args.reply_to)
+          client.send_voice(chat_id, args.path, progress=upload_progress, duration=args.duration, parse_mode=parse_mode, caption=caption.format(file_name = PurePath(filename).stem, file_format = PurePath(filename).suffix, file_size_b = file_size, file_size_kb = file_size / 1024, file_size_mb = file_size / (1024 * 1024), file_size_gb = file_size / (1024 * 1024 * 1024), file_sha256 = file_sha256, file_md5 = file_md5, creation_time = creation_time, modification_time = modification_time, duration=args.duration, path = PurePath(args.path)), disable_notification=args.silent, reply_to_message_id=args.reply_to)
           Path(args.path).unlink(missing_ok=True) if args.delete_on_done else None
         except Exception as error_code:
           print(f"\nAn error occured!\n{error_code}")
@@ -997,7 +1009,7 @@ with client:
                   args.duration = floor(audio.duration)
               file_size, file_sha256, file_md5, creation_time, modification_time = file_info(_path, caption)
               start_time = time()
-              client.send_video(chat_id, _path, progress=upload_progress, duration=args.duration, parse_mode=parse_mode, caption=caption.format(file_name = PurePath(filename).stem, file_format = PurePath(filename).suffix, file_size_b = file_size, file_size_kb = file_size / 1024, file_size_mb = file_size / (1024 * 1024), file_size_gb = file_size / (1024 * 1024 * 1024), file_sha256 = file_sha256, file_md5 = file_md5, creation_time = creation_time, modification_time = modification_time, duration=args.duration, path = PurePath(_path)), disable_notification=args.silent, reply_to_message_id=args.reply_to)
+              client.send_voice(chat_id, _path, progress=upload_progress, duration=args.duration, parse_mode=parse_mode, caption=caption.format(file_name = PurePath(filename).stem, file_format = PurePath(filename).suffix, file_size_b = file_size, file_size_kb = file_size / 1024, file_size_mb = file_size / (1024 * 1024), file_size_gb = file_size / (1024 * 1024 * 1024), file_sha256 = file_sha256, file_md5 = file_md5, creation_time = creation_time, modification_time = modification_time, duration=args.duration, path = PurePath(_path)), disable_notification=args.silent, reply_to_message_id=args.reply_to)
               Path(_path).unlink(missing_ok=True) if args.delete_on_done else None
             except Exception as error_code:
               print(f"\nAn error occured!\n{error_code}")
@@ -1039,7 +1051,7 @@ with client:
                 filename = args.prefix + filename
               if args.replace:
                 filename = filename.replace(args.replace[0], args.replace[1])
-              with VideoFileClip(_path) as video:
+              with VideoFileClip(str(_path)) as video:
                 Path(args.thumb_dir).mkdir(exist_ok=True)
                 if args.thumb == 'auto':
                   args.thumb = f"thumb/THUMB_{PurePath(_path).stem}.jpg"
@@ -1106,4 +1118,3 @@ with client:
             print(f"[Dir] -> {PurePath(_path).name}")
       else:
         print("Error: Given path is invalid.")
-
