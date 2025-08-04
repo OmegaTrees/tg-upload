@@ -90,6 +90,15 @@ parser.add_argument("--thumb_dir", metavar="TG_UPLOAD_THUMB_DIR", default=env.ge
 parser.add_argument("--no_warn", default=env.get("TG_UPLOAD_NO_WARN", "False").lower() in {"true", "t", "1"}, action="store_true", help="Don't show warning messages. (DEPRECATED)")
 parser.add_argument("--no_update", default=env.get("TG_UPLOAD_NO_UPDATE", "False").lower() in {"true", "t", "1"}, action="store_true", help="Disable checking for updates.")
 
+# FORWARDING FLAGS
+parser.add_argument("--forward", default=env.get("TG_UPLOAD_FORWARD", "False").lower() in {"true", "t", "1"}, action="store_true", help="Enable message forwarding mode.")
+parser.add_argument("--from_chat", metavar="TG_UPLOAD_FROM_CHAT", default=env.get("TG_UPLOAD_FROM_CHAT", None), help="Source chat ID to forward messages from.")
+parser.add_argument("--to_chat", metavar="TG_UPLOAD_TO_CHAT", default=env.get("TG_UPLOAD_TO_CHAT", None), help="Destination chat ID to forward messages to.")
+parser.add_argument("--forward_msg_ids", nargs="+", metavar="TG_UPLOAD_FORWARD_MSG_IDS", type=int, default=env.get("TG_UPLOAD_FORWARD_MSG_IDS", "").split(","), help="Message IDs to forward (separated with space).")
+parser.add_argument("--forward_range", default=env.get("TG_UPLOAD_FORWARD_RANGE", "False").lower() in {"true", "t", "1"}, action="store_true", help="Forward all messages between two message IDs.")
+parser.add_argument("--copy_mode", default=env.get("TG_UPLOAD_COPY_MODE", "False").lower() in {"true", "t", "1"}, action="store_true", help="Copy messages instead of forwarding (removes forward attribution).")
+parser.add_argument("--forward_limit", metavar="TG_UPLOAD_FORWARD_LIMIT", type=int, default=int(env.get("TG_UPLOAD_FORWARD_LIMIT", 100)), help="Maximum number of messages to forward at once.")
+
 # DOWNLOAD FLAGS
 parser.add_argument("--dl", default=env.get("TG_UPLOAD_DL", "False").lower() in {"true", "t", "1"}, action="store_true", help="Enable download module of tg-upload.")
 parser.add_argument("--links", metavar="TG_UPLOAD_LINKS", nargs="+", type=str, default=env.get("TG_UPLOAD_LINKS", "").split(","), help="Telegram file links to be downloaded (separated with space).")
@@ -296,6 +305,106 @@ def get_chatid(raw_id):
     return int(raw_id)
   else:
     return raw_id
+def forward_messages_func(app, from_chat, to_chat, message_ids, copy_mode=False):
+    """Forward or copy specific messages from one chat to another"""
+    try:
+        if copy_mode:
+            result = app.copy_messages(
+                chat_id=to_chat,
+                from_chat_id=from_chat,
+                message_ids=message_ids
+            )
+            action = "copied"
+        else:
+            result = app.forward_messages(
+                chat_id=to_chat,
+                from_chat_id=from_chat,
+                message_ids=message_ids
+            )
+            action = "forwarded"
+        
+        print(f"✅ Successfully {action} {len(message_ids)} message(s)")
+        return result
+    except Exception as e:
+        print(f"❌ Error {action.replace('ed', 'ing')} messages: {e}")
+        return None
+
+def forward_message_range(app, from_chat, to_chat, start_id, end_id, copy_mode=False, limit=100):
+    """Forward a range of messages between two message IDs"""
+    try:
+        messages = []
+        current_id = min(start_id, end_id)
+        max_id = max(start_id, end_id)
+        
+        count = 0
+        for msg_id in range(current_id, max_id + 1):
+            if count >= limit:
+                break
+            try:
+                msg = app.get_messages(from_chat, msg_id)
+                if msg and not msg.empty:
+                    messages.append(msg_id)
+                    count += 1
+            except:
+                continue
+        
+        if not messages:
+            print("❌ No valid messages found in the specified range")
+            return None
+        
+        print(f"📄 Found {len(messages)} messages in range {current_id}-{max_id}")
+        return forward_messages_func(app, from_chat, to_chat, messages, copy_mode)
+        
+    except Exception as e:
+        print(f"❌ Error processing message range: {e}")
+        return None
+
+def interactive_message_selection(app, from_chat):
+    """Interactive mode to select messages for forwarding"""
+    try:
+        print(f"\n📋 Getting recent messages from chat: {from_chat}")
+        messages = []
+        for message in app.get_chat_history(from_chat, limit=20):
+            if message.text or message.media:
+                msg_info = {
+                    'id': message.id,
+                    'date': message.date,
+                    'text': message.text[:50] + "..." if message.text and len(message.text) > 50 else message.text,
+                    'media_type': message.media.value if message.media else None
+                }
+                messages.append(msg_info)
+        
+        if not messages:
+            print("❌ No messages found in the chat")
+            return []
+        
+        print("\n📝 Recent messages:")
+        print("-" * 80)
+        for i, msg in enumerate(messages, 1):
+            media_info = f" [{msg['media_type']}]" if msg['media_type'] else ""
+            print(f"{i:2d}. ID: {msg['id']:6d} | {msg['date']} | {msg['text'] or 'Media message'}{media_info}")
+        
+        print("-" * 80)
+        selection = input("\nEnter message numbers to forward (e.g., 1,3,5 or 1-5): ").strip()
+        
+        selected_ids = []
+        for part in selection.split(','):
+            part = part.strip()
+            if '-' in part:
+                start, end = map(int, part.split('-'))
+                for i in range(start, end + 1):
+                    if 1 <= i <= len(messages):
+                        selected_ids.append(messages[i-1]['id'])
+            else:
+                i = int(part)
+                if 1 <= i <= len(messages):
+                    selected_ids.append(messages[i-1]['id'])
+        
+        return selected_ids
+        
+    except Exception as e:
+        print(f"❌ Error in interactive selection: {e}")
+        return []
 
 if args.combine:
   exit(combine_file())
@@ -458,6 +567,52 @@ else:
   )
 
 with client:
+  # FORWARDING MODE
+  if args.forward:
+    print("🔄 Forwarding mode enabled")
+    
+    if not args.from_chat:
+      print("❌ Source chat (--from_chat) is required for forwarding")
+      exit(1)
+    
+    if not args.to_chat:
+      args.to_chat = args.chat_id
+    
+    print(f"📤 Forwarding from: {args.from_chat}")
+    print(f"📥 Forwarding to: {args.to_chat}")
+    print(f"🔄 Mode: {'Copy' if args.copy_mode else 'Forward'}")
+    
+    try:
+      if args.forward_msg_ids and args.forward_msg_ids != ['']:
+        message_ids = [int(x) for x in args.forward_msg_ids if x.strip()]
+        if message_ids:
+          if args.forward_range and len(message_ids) == 2:
+            print(f"📋 Forwarding message range: {message_ids[0]} to {message_ids[1]}")
+            forward_message_range(client, args.from_chat, args.to_chat, message_ids[0], message_ids[1], args.copy_mode, args.forward_limit)
+          else:
+            print(f"📋 Forwarding specific messages: {message_ids}")
+            forward_messages_func(client, args.from_chat, args.to_chat, message_ids, args.copy_mode)
+        else:
+          print("❌ No valid message IDs provided")
+      else:
+        print("🎯 Interactive mode: Select messages to forward")
+        selected_ids = interactive_message_selection(client, args.from_chat)
+        if selected_ids:
+          print(f"📋 Selected message IDs: {selected_ids}")
+          confirm = input(f"\nForward {len(selected_ids)} messages? (y/N): ").lower()
+          if confirm in ['y', 'yes']:
+            forward_messages_func(client, args.from_chat, args.to_chat, selected_ids, args.copy_mode)
+          else:
+            print("❌ Forwarding cancelled")
+        else:
+          print("❌ No messages selected")
+    
+    except Exception as e:
+      print(f"❌ Error in forwarding mode: {e}")
+    
+    print("✅ Forwarding mode completed")
+    exit(0)
+	  
   if args.login_only:
     exit("Authorization completed!")
   elif args.export_string:
