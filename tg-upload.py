@@ -94,7 +94,7 @@ parser.add_argument("--no_update", default=env.get("TG_UPLOAD_NO_UPDATE", "False
 parser.add_argument("--forward", default=env.get("TG_UPLOAD_FORWARD", "False").lower() in {"true", "t", "1"}, action="store_true", help="Enable message forwarding mode.")
 parser.add_argument("--from_chat", metavar="TG_UPLOAD_FROM_CHAT", default=env.get("TG_UPLOAD_FROM_CHAT", None), help="Source chat ID to forward messages from.")
 parser.add_argument("--to_chat", metavar="TG_UPLOAD_TO_CHAT", default=env.get("TG_UPLOAD_TO_CHAT", None), help="Destination chat ID to forward messages to.")
-parser.add_argument("--forward_msg_ids", nargs="+", metavar="TG_UPLOAD_FORWARD_MSG_IDS", type=int, default=env.get("TG_UPLOAD_FORWARD_MSG_IDS", "").split(","), help="Message IDs to forward (separated with space).")
+parser.add_argument("--forward_msg_ids", nargs="+", metavar="TG_UPLOAD_FORWARD_MSG_IDS", type=int, default=[], help="Message IDs to forward (separated with space).")
 parser.add_argument("--forward_range", default=env.get("TG_UPLOAD_FORWARD_RANGE", "False").lower() in {"true", "t", "1"}, action="store_true", help="Forward all messages between two message IDs.")
 parser.add_argument("--copy_mode", default=env.get("TG_UPLOAD_COPY_MODE", "False").lower() in {"true", "t", "1"}, action="store_true", help="Copy messages instead of forwarding (removes forward attribution).")
 parser.add_argument("--forward_limit", metavar="TG_UPLOAD_FORWARD_LIMIT", type=int, default=int(env.get("TG_UPLOAD_FORWARD_LIMIT", 100)), help="Maximum number of messages to forward at once.")
@@ -567,7 +567,7 @@ else:
   )
 
 with client:
-  # FORWARDING MODE
+  # FORWARDING MODE (Add after line 230, before "if args.login_only:")
   if args.forward:
     print("🔄 Forwarding mode enabled")
     
@@ -583,17 +583,14 @@ with client:
     print(f"🔄 Mode: {'Copy' if args.copy_mode else 'Forward'}")
     
     try:
-      if args.forward_msg_ids and args.forward_msg_ids != ['']:
-        message_ids = [int(x) for x in args.forward_msg_ids if x.strip()]
-        if message_ids:
-          if args.forward_range and len(message_ids) == 2:
-            print(f"📋 Forwarding message range: {message_ids[0]} to {message_ids[1]}")
-            forward_message_range(client, args.from_chat, args.to_chat, message_ids[0], message_ids[1], args.copy_mode, args.forward_limit)
-          else:
-            print(f"📋 Forwarding specific messages: {message_ids}")
-            forward_messages_func(client, args.from_chat, args.to_chat, message_ids, args.copy_mode)
+      if args.forward_msg_ids:
+        message_ids = args.forward_msg_ids  # Already integers from argparse
+        if args.forward_range and len(message_ids) == 2:
+          print(f"📋 Forwarding message range: {message_ids[0]} to {message_ids[1]}")
+          forward_message_range(client, args.from_chat, args.to_chat, message_ids[0], message_ids[1], args.copy_mode, args.forward_limit)
         else:
-          print("❌ No valid message IDs provided")
+          print(f"📋 Forwarding specific messages: {message_ids}")
+          forward_messages_func(client, args.from_chat, args.to_chat, message_ids, args.copy_mode)
       else:
         print("🎯 Interactive mode: Select messages to forward")
         selected_ids = interactive_message_selection(client, args.from_chat)
@@ -1109,3 +1106,4 @@ with client:
             print(f"[Dir] -> {PurePath(_path).name}")
       else:
         print("Error: Given path is invalid.")
+
